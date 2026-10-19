@@ -1,0 +1,23 @@
+name: SoundGuide checks
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.12"
+          enable-cache: true
+      - run: uv sync --frozen --group dev
+      - run: uv run ruff check soundguide scripts/doctor.py scripts/verify_series.py tests/soundguide tests/integration
+      - run: uv run pytest tests/soundguide --disable-socket --allow-unix-socket

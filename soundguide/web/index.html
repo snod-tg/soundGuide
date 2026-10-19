@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f5f4ef">
+  <meta name="description" content="从 Sony 耳机官方手册中查找答案，核对原文与页码。">
+  <title>SoundGuide · 让每个答案有据可查</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="/static/styles.css">
+  <script src="/static/app.js" defer></script>
+</head>
+<body>
+  <header class="header wrap">
+    <a class="brand" href="/" aria-label="SoundGuide 首页"><span class="brand-icon" aria-hidden="true">s<span>g</span></span>SoundGuide<span class="brand-label">耳机指南</span></a>
+    <a class="docs-link" href="/docs" target="_blank" rel="noopener noreferrer">API 文档 <span aria-hidden="true">↗</span></a>
+  </header>
+  <main class="wrap">
+    <section class="intro" aria-labelledby="title">
+      <div class="eyebrow"><span class="dot"></span> 基于 Sony 官方帮助指南</div>
+      <h1 id="title">好好听音乐。<br><span>剩下的，查指南。</span></h1>
+      <p>连接、设置与故障排查，从你的耳机型号开始。<br class="desktop-break">回答附上官方原文与页码，方便你亲自核对。</p>
+    </section>
+    <div class="workspace">
+      <section class="panel ask-panel" aria-labelledby="ask-title">
+        <div class="section-heading"><span class="step">01</span><h2 id="ask-title">你想了解什么？</h2></div>
+        <form id="question-form">
+          <label class="field-label" for="model">耳机型号</label>
+          <select id="model" name="model">
+            <option value="" disabled selected>正在读取可用型号…</option>
+          </select>
+          <label class="field-label question-label" for="question">你的问题</label>
+          <textarea id="question" name="question" rows="5" maxlength="300" required placeholder="例如：如何同时连接手机和电脑？" aria-describedby="input-hint question-count"></textarea>
+          <div class="input-meta"><span id="input-hint">补充设备或故障现象，回答会更具体</span><span id="question-count">0 / 300</span></div>
+          <div class="examples" aria-label="示例问题">
+            <span class="examples-label">试试这些</span>
+            <button type="button" data-question="如何同时连接手机和电脑？">连接两台设备 <span aria-hidden="true">↗</span></button>
+            <button type="button" data-question="如何将耳机恢复出厂设置？">恢复出厂设置 <span aria-hidden="true">↗</span></button>
+            <button type="button" data-question="耳机没有声音，应该如何排查？">没有声音 <span aria-hidden="true">↗</span></button>
+          </div>
+          <div class="actions"><button class="primary" id="submit" type="submit" disabled>查找答案 <span aria-hidden="true">→</span></button><button class="cancel" id="cancel" type="button" hidden>停止等待</button></div>
+          <p class="form-note">每次提问独立处理，不保留对话历史。</p>
+        </form>
+      </section>
+      <section class="panel answer-panel" aria-labelledby="answer-title" aria-busy="false" id="answer-panel">
+        <div class="answer-top"><div class="section-heading"><span class="step">02</span><h2 id="answer-title">指南里的答案</h2></div><span id="result-badge" class="badge">等待提问</span></div>
+        <div id="status" class="status" role="status" aria-live="polite"></div>
+        <div id="empty" class="empty">
+          <svg class="headphones" viewBox="0 0 120 120" fill="none" aria-hidden="true"><circle cx="60" cy="60" r="55" fill="#efedf8"/><path d="M31 66V52a29 29 0 0 1 58 0v14" stroke="#77718f" stroke-width="5" stroke-linecap="round"/><rect x="24" y="57" width="17" height="34" rx="8.5" fill="#b3accd"/><rect x="79" y="57" width="17" height="34" rx="8.5" fill="#b3accd"/><path d="M49 65h22M49 74h15" stroke="#b3accd" stroke-width="3" stroke-linecap="round"/></svg>
+          <h3>让官方资料来回答</h3><p>在左侧输入问题，<br>这里会展示回答和对应的证据。</p>
+          <div class="empty-tags"><span>按型号检索</span><span>原文可追溯</span></div>
+        </div>
+        <div id="result" hidden>
+          <p id="result-context" class="result-context"></p>
+          <div id="answer-text" class="answer-text"></div>
+          <p id="answer-note" class="answer-note"></p>
+          <section id="evidence" class="evidence" aria-labelledby="evidence-title" hidden>
+            <div class="evidence-heading"><h3 id="evidence-title">官方依据</h3><span id="citation-count"></span></div>
+            <div id="citations"></div>
+          </section>
+        </div>
+      </section>
+    </div>
+    <section class="sources" aria-labelledby="sources-title">
+      <div class="sources-heading"><h2 id="sources-title">资料来源</h2><span id="source-summary" role="status">正在读取索引状态…</span></div>
+      <div id="source-list" class="source-list"></div>
+      <p id="source-error" class="source-error" hidden>暂时无法读取资料状态，请稍后刷新。</p>
+    </section>
+  </main>
+  <footer class="wrap footer"><span>SoundGuide / 有据可查的耳机指南</span><span>生成回答可能有误，请结合官方原文核对。非 Sony 官方服务。</span></footer>
+</body>
+</html>
