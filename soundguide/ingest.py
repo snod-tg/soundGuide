@@ -28,17 +28,10 @@ async def ingest_source(source, settings, store, embeddings):
         or (source.expected_sha256 and source.expected_sha256 != record["sha256"])
     ):
         raise ValueError("Download identity/hash mismatch; fetch the source again")
-    prepared = await asyncio.to_thread(
-        lambda: asyncio.run(
-            prepare_document(
-                source,
-                payload,
-                "application/json"
-                if source.format == "html_manual"
-                else "application/pdf",
-            )
-        )
+    content_type = (
+        "application/json" if source.format == "html_manual" else "application/pdf"
     )
+    prepared = await asyncio.to_thread(prepare_document, source, payload, content_type)
     prepared["download"] = record
     prepared["provenance_verification"] = "official_https_download_sha256"
     vectors = await embeddings.aembed_documents(

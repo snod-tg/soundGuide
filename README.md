@@ -135,7 +135,6 @@ curl --fail http://127.0.0.1:8001/api/search \
 soundguide/       应用、资料处理、存储、检索与生成
   web/            网页静态资源
   sources.json    官方来源目录
-langconnect/      保留的上游模块；使用其文档处理组件
 scripts/doctor.py 外部依赖诊断
 scripts/verify_series.py 资料索引一致性检查
 tests/            应用单元测试与独立数据库集成测试
@@ -148,7 +147,7 @@ uv.lock           固定依赖版本
 
 ```bash
 # 离线测试，不调用真实模型或数据库
-uv run pytest tests/soundguide --disable-socket --allow-unix-socket
+uv run pytest --disable-socket --allow-unix-socket
 
 # 检查应用和公开脚本
 uv run ruff check soundguide scripts/doctor.py scripts/verify_series.py tests/soundguide tests/integration
@@ -168,6 +167,6 @@ SG_RUN_POSTGRES_TESTS=1 uv run pytest tests/integration
 
 ## 来源与许可证
 
-项目起始于 [LangConnect](https://github.com/langchain-ai/langconnect)，基于提交 `653db4db537e38a94afa0b03906091c2c655abb4`，保留上游模块及 MIT 许可证。SoundGuide 新增领域资料目录、来源校验、按页/章节处理、独立存储、HTTP Embedding、混合检索、证据问答和网页；未将上游集合 API 挂载到当前服务，运行 SoundGuide 无需 Supabase 服务。
+项目起始于 [LangConnect](https://github.com/langchain-ai/langconnect)，基于提交 `653db4db537e38a94afa0b03906091c2c655abb4`，保留上游来源和 MIT 许可证。普通 HTML／纯文本保留原先的预切分行为；官方手册处理、检索与问答是 SoundGuide 自有代码。完整上游实现可在该提交查看，不包含在当前运行包中。SoundGuide 新增领域资料目录、来源校验、按页/章节处理、独立存储、HTTP Embedding、混合检索、证据问答和网页；未将上游集合 API 挂载到当前服务，运行 SoundGuide 无需 Supabase 服务。
 
 代码使用 [MIT License](LICENSE)。

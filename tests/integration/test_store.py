@@ -38,9 +38,7 @@ async def test_real_pgvector_isolation_idempotency_rollback_and_profile_guard():
     vector = [1.0] + [0.0] * 511
     try:
         for source in sources:
-            data = await prepare_document(
-                source, b"original test content", "text/plain"
-            )
+            data = prepare_document(source, b"original test content", "text/plain")
             data["download"] = {"sha256": "synthetic-test-only"}
             prepared.append(data)
             await store.replace(source, data, [vector])
@@ -49,9 +47,7 @@ async def test_real_pgvector_isolation_idempotency_rollback_and_profile_guard():
         assert len(hits) == 1
         assert hits[0]["metadata"]["model"] == sources[0].model
         assert hits[0]["cosine_similarity"] == pytest.approx(1)
-        broken = await prepare_document(
-            sources[0], b"changed test content", "text/plain"
-        )
+        broken = prepare_document(sources[0], b"changed test content", "text/plain")
         broken["download"] = {"sha256": "synthetic-revision"}
         with pytest.raises(asyncpg.DataError):
             await store.replace(sources[0], broken, [[1.0]])

@@ -75,7 +75,7 @@ async def test_html_download_follows_only_own_manual_and_preserves_chapter_urls(
     payload = (
         tmp_path / "raw" / html_source.id / (record["sha256"] + ".json")
     ).read_bytes()
-    prepared = await prepare_document(html_source, payload, "application/json")
+    prepared = prepare_document(html_source, payload, "application/json")
     assert record["chapters"] == 2
     assert len(visited) == 3
     assert {chunk["metadata"]["source_url"] for chunk in prepared["chunks"]} == {
@@ -128,7 +128,7 @@ async def test_incomplete_html_download_preserves_previous_manifest(
 
 
 @pytest.mark.parametrize("failure", ["hash", "other-model"])
-async def test_html_archive_rejects_tampering_and_cross_manual_chapters(
+def test_html_archive_rejects_tampering_and_cross_manual_chapters(
     html_source, chapter_html, failure
 ):
     """An archive's inner chapter identity is checked before parsing and embedding."""
@@ -150,9 +150,7 @@ async def test_html_archive_rejects_tampering_and_cross_manual_chapters(
         "pages": [page],
     }
     with pytest.raises(ValueError, match="URL/hash"):
-        await prepare_document(
-            html_source, json.dumps(archive).encode(), "application/json"
-        )
+        prepare_document(html_source, json.dumps(archive).encode(), "application/json")
 
 
 def test_html_fusion_limits_per_chapter_instead_of_entire_manual():

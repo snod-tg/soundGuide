@@ -30,7 +30,7 @@ async def test_api_reports_candidates_without_model_or_database_credentials(tmp_
     assert all(source["status"] == "candidate" for source in response.json())
 
 
-async def test_real_parser_preserves_source_and_stable_ids_without_cross_model_mix():
+def test_real_parser_preserves_source_and_stable_ids_without_cross_model_mix():
     """Exercise HTML parsing and splitting inherited from LangConnect."""
     source, other = load_sources()[:2]
     # Synthetic parser fixture; not official product instructions or an evaluation answer.
@@ -39,9 +39,9 @@ async def test_real_parser_preserves_source_and_stable_ids_without_cross_model_m
         + "型号与版本信息仅用于测试。" * 150
         + "</body></html>"
     ).encode()
-    first = await prepare_document(source, payload, "text/html")
-    second = await prepare_document(source, payload, "text/html")
-    other_model = await prepare_document(other, payload, "text/html")
+    first = prepare_document(source, payload, "text/html")
+    second = prepare_document(source, payload, "text/html")
+    other_model = prepare_document(other, payload, "text/html")
     assert len(first["chunks"]) > 1
     assert first["chunks"] == second["chunks"]
     assert first["document_id"] != other_model["document_id"]
@@ -57,12 +57,12 @@ async def test_real_parser_preserves_source_and_stable_ids_without_cross_model_m
     assert "<body>" not in first["chunks"][0]["content"]
 
 
-async def test_updated_document_or_version_gets_new_identity():
+def test_updated_document_or_version_gets_new_identity():
     """Do not reuse document identities after a revision."""
     source = load_sources()[0]
-    first = await prepare_document(source, b"original content", "text/plain")
-    changed = await prepare_document(source, b"updated content", "text/plain")
-    revised = await prepare_document(
+    first = prepare_document(source, b"original content", "text/plain")
+    changed = prepare_document(source, b"updated content", "text/plain")
+    revised = prepare_document(
         source.model_copy(update={"document_version": "v2"}),
         b"original content",
         "text/plain",
@@ -72,7 +72,7 @@ async def test_updated_document_or_version_gets_new_identity():
     )
 
 
-async def test_empty_and_unsupported_documents_are_rejected():
+def test_empty_and_unsupported_documents_are_rejected():
     """Reject unsupported content instead of reporting successful preparation."""
     source = load_sources()[0]
     for payload, content_type in (
@@ -81,7 +81,7 @@ async def test_empty_and_unsupported_documents_are_rejected():
         (b"content", "image/png"),
     ):
         with pytest.raises(ValueError, match="Only HTML|Document must|No text"):
-            await prepare_document(source, payload, content_type)
+            prepare_document(source, payload, content_type)
 
 
 def test_duplicate_source_ids_are_rejected(tmp_path):

@@ -20,4 +20,4 @@ jobs:
           enable-cache: true
       - run: uv sync --frozen --group dev
       - run: uv run ruff check soundguide scripts/doctor.py scripts/verify_series.py tests/soundguide tests/integration
-      - run: uv run pytest tests/soundguide --disable-socket --allow-unix-socket
+      - run: uv run pytest --disable-socket --allow-unix-socket

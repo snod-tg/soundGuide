@@ -1,28 +1,24 @@
-"""Prepare an operator-supplied document using LangConnect's real parser/splitter.
+"""Prepare an operator-supplied document using format-specific parsers.
 
 Run: uv run python -m soundguide.prepare --help
 This does not fetch, embed, index or verify that the supplied file matches its URL.
 """
 
 import argparse
-import asyncio
 import hashlib
 import json
 import re
 from datetime import UTC, datetime
-from io import BytesIO
 from pathlib import Path
 from urllib.parse import urlsplit
 
 from bs4 import BeautifulSoup
-from fastapi import UploadFile
-from langchain_community.document_loaders.parsers import PDFMinerParser
+from langchain_community.document_loaders.parsers import BS4HTMLParser, PDFMinerParser
+from langchain_community.document_loaders.parsers.txt import TextParser
 from langchain_core.documents import Document
 from langchain_core.documents.base import Blob
 from langchain_text_splitters import RecursiveCharacterTextSplitter
-from starlette.datastructures import Headers
 
-from langconnect.services.document_processor import process_document
 from soundguide import PIPELINE_VERSION
 from soundguide.catalog import Source, load_sources
 
@@ -109,7 +105,41 @@ def parse_html_manual(source: Source, payload: bytes) -> list[Document]:
     return documents
 
 
-async def prepare_document(source: Source, payload: bytes, content_type: str) -> dict:
+def parse_pdf_manual(source: Source, blob: Blob) -> list[Document]:
+    """Clean pages while carrying forward the current section title."""
+    pages = PDFMinerParser(mode="page").parse(blob)
+    cleaned = []
+    current_section_title = source.title
+    for doc in pages:
+        page = doc.metadata["page"] + 1
+        if page in source.excluded_pages:
+            continue
+        original = doc.page_content
+        doc.page_content = clean_pdf_page(original, page)
+        if not doc.page_content:
+            continue
+        if "帮助指南" in original.splitlines()[:6]:
+            current_section_title = doc.page_content.splitlines()[0][:80]
+        doc.metadata["section_title"] = current_section_title
+        cleaned.append(doc)
+    return cleaned
+
+
+def parse_document(source: Source, payload: bytes, content_type: str) -> list[Document]:
+    """Dispatch by format and preserve the legacy plain-file split boundaries."""
+    if content_type == "application/json":
+        return parse_html_manual(source, payload)
+    blob = Blob(data=payload, mimetype=content_type)
+    if content_type == "application/pdf":
+        return parse_pdf_manual(source, blob)
+    parser = BS4HTMLParser() if content_type == "text/html" else TextParser()
+    # Keep the legacy LangConnect pre-split for operator-supplied files.
+    return RecursiveCharacterTextSplitter(
+        chunk_size=1000, chunk_overlap=200
+    ).split_documents(parser.parse(blob))
+
+
+def prepare_document(source: Source, payload: bytes, content_type: str) -> dict:
     """Parse/split a file and attach stable provenance and applicability metadata."""
     if content_type not in CONTENT_TYPES:
         raise ValueError(
@@ -128,40 +158,9 @@ async def prepare_document(source: Source, payload: bytes, content_type: str) ->
         ensure_ascii=False,
     )
     document_id = hashlib.sha256(identity.encode()).hexdigest()
-    upload = UploadFile(
-        file=BytesIO(payload),
-        headers=Headers({"content-type": content_type}),
-    )
-    try:
-        if content_type == "application/json":
-            documents = parse_html_manual(source, payload)
-        elif content_type == "application/pdf":
-            documents = PDFMinerParser(mode="page").parse(
-                Blob(data=payload, mimetype=content_type)
-            )
-        else:
-            documents = await process_document(upload)
-        if content_type == "application/pdf":
-            cleaned = []
-            title = source.title
-            for doc in documents:
-                page = doc.metadata["page"] + 1
-                if page in source.excluded_pages:
-                    continue
-                original = doc.page_content
-                doc.page_content = clean_pdf_page(original, page)
-                if not doc.page_content:
-                    continue
-                if "帮助指南" in original.splitlines()[:6]:
-                    title = doc.page_content.splitlines()[0][:80]
-                doc.metadata["section_title"] = title
-                cleaned.append(doc)
-            documents = cleaned
-        documents = RecursiveCharacterTextSplitter(
-            chunk_size=350, chunk_overlap=60
-        ).split_documents(documents)
-    finally:
-        await upload.close()
+    documents = RecursiveCharacterTextSplitter(
+        chunk_size=350, chunk_overlap=60
+    ).split_documents(parse_document(source, payload, content_type))
     documents = [doc for doc in documents if doc.page_content.strip()]
     if not documents:
         raise ValueError("No text could be extracted from the document")
@@ -220,10 +219,8 @@ def main() -> None:
         parser.error("Unknown source id; add a source to soundguide/sources.json first")
     if args.input.stat().st_size > MAX_BYTES:
         parser.error("Document exceeds 20 MiB")
-    report = asyncio.run(
-        prepare_document(
-            sources[args.source_id], args.input.read_bytes(), args.content_type
-        )
+    report = prepare_document(
+        sources[args.source_id], args.input.read_bytes(), args.content_type
     )
     args.output.parent.mkdir(parents=True, exist_ok=True)
     with args.output.open("x", encoding="utf-8") as handle:
