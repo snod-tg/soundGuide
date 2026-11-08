@@ -1,4 +1,4 @@
-"""Offline tests against the real inherited parser, with synthetic input only."""
+"""Offline tests against the real document parser, with synthetic input only."""
 
 import json
 
@@ -31,7 +31,7 @@ async def test_api_reports_candidates_without_model_or_database_credentials(tmp_
 
 
 def test_real_parser_preserves_source_and_stable_ids_without_cross_model_mix():
-    """Exercise HTML parsing and splitting inherited from LangConnect."""
+    """Exercise HTML parsing and the preserved legacy split boundaries."""
     source, other = load_sources()[:2]
     # Synthetic parser fixture; not official product instructions or an evaluation answer.
     payload = (

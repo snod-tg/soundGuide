@@ -170,18 +170,7 @@ async def test_answer_route_hides_failed_model_output(
             raise InvalidAnswerError("unvalidated private draft")
         raise answering.GenerationUnavailableError("private provider detail")
 
-    async def inventory(*args: object) -> list[dict]:
-        return [
-            {
-                "model": "WH-1000XM5",
-                "language": "zh-CN",
-                "document_version": "v1",
-                "status": "indexed",
-            }
-        ]
-
     monkeypatch.setattr(server, "retrieve", retrieved)
-    monkeypatch.setattr(server, "sources", inventory)
     monkeypatch.setattr(server, "generate", rejected)
     APP.dependency_overrides[get_settings] = lambda: Settings(
         database_url="unused",

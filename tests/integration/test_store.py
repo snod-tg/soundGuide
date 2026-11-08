@@ -47,6 +47,19 @@ async def test_real_pgvector_isolation_idempotency_rollback_and_profile_guard():
         assert len(hits) == 1
         assert hits[0]["metadata"]["model"] == sources[0].model
         assert hits[0]["cosine_similarity"] == pytest.approx(1)
+        source = sources[0].model_copy(
+            update={"expected_sha256": "synthetic-test-only"}
+        )
+        states = await store.status(source.id)
+        assert [state["source_id"] for state in states] == [source.id]
+        assert (
+            await store.search(vector, source.model, 10, "zh-CN", "v1", source=source)
+            == hits
+        )
+        stale = source.model_copy(update={"expected_sha256": "different-download"})
+        assert not await store.search(
+            vector, source.model, 10, "zh-CN", "v1", source=stale
+        )
         broken = prepare_document(sources[0], b"changed test content", "text/plain")
         broken["download"] = {"sha256": "synthetic-revision"}
         with pytest.raises(asyncpg.DataError):

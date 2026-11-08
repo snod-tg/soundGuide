@@ -1,13 +1,12 @@
 """SoundGuide source status and filtered vector retrieval API."""
 
-import json
 from pathlib import Path
 from typing import Annotated, Literal
 
 import asyncpg
 import httpx
-from fastapi import Depends, FastAPI, HTTPException
-from fastapi.responses import FileResponse
+from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, field_validator
 
@@ -19,9 +18,18 @@ from soundguide.answer import (
     generate,
 )
 from soundguide.catalog import load_sources
+from soundguide.errors import (
+    ConfigurationError,
+    EmbeddingContractError,
+    IndexNotReadyError,
+    InvalidQueryError,
+    ManifestError,
+    RetrievalLimitError,
+    SoundGuideError,
+)
+from soundguide.inventory import list_source_statuses
 from soundguide.retrieval import expand_query, retrieve
 from soundguide.settings import Settings, get_settings
-from soundguide.store import Store
 
 APP = FastAPI(
     title="SoundGuide API",
@@ -44,41 +52,37 @@ async def health() -> dict:
     return {"status": "ok", "service": "soundguide"}
 
 
+ERROR_STATUS = {
+    ConfigurationError: 503,
+    EmbeddingContractError: 502,
+    IndexNotReadyError: 409,
+    InvalidQueryError: 422,
+    ManifestError: 503,
+    RetrievalLimitError: 503,
+}
+
+
+@APP.exception_handler(SoundGuideError)
+async def application_error(_request: Request, exc: SoundGuideError) -> JSONResponse:
+    """Translate expected service errors at the HTTP boundary."""
+    return JSONResponse({"detail": str(exc)}, status_code=ERROR_STATUS[type(exc)])
+
+
+async def dependency_unavailable(_request: Request, _exc: Exception) -> JSONResponse:
+    """Keep infrastructure error details out of the public response."""
+    return JSONResponse(
+        {"detail": "SoundGuide dependency is unavailable"}, status_code=503
+    )
+
+
+for error_type in (httpx.HTTPError, OSError, asyncpg.PostgresError):
+    APP.add_exception_handler(error_type, dependency_unavailable)
+
+
 @APP.get("/api/sources")
 async def sources(settings: Annotated[Settings, Depends(get_settings)]) -> list[dict]:
     """Report downloaded and committed indexed state, never just planned state."""
-    states = {}
-    if settings.database_url:
-        try:
-            states = {row["source_id"]: row for row in await Store(settings).status()}
-        except (ValueError, OSError, asyncpg.PostgresError) as exc:
-            raise HTTPException(503, "SoundGuide storage is unavailable") from exc
-    result = []
-    for source in load_sources():
-        item = source.model_dump(mode="json")
-        item.update(status="candidate", chunks=0)
-        manifest = settings.data_dir / "raw" / source.id / "download.json"
-        downloaded = None
-        if manifest.exists():
-            downloaded = json.loads(manifest.read_text())
-            item["status"] = "downloaded"
-        if source.id in states:
-            state = states[source.id]
-            item.update(
-                status="indexed"
-                if state["profile"] == settings.profile
-                and state["chunks"] > 0
-                and state["content_sha256"] == source.expected_sha256
-                and (
-                    downloaded is None
-                    or downloaded.get("sha256") == state["content_sha256"]
-                )
-                else "needs_reindex",
-                chunks=state["chunks"],
-                indexed_at=state["indexed_at"],
-            )
-        result.append(item)
-    return result
+    return await list_source_statuses(settings)
 
 
 class ProductRequest(BaseModel):
@@ -110,37 +114,15 @@ async def search(
     body: SearchRequest, settings: Annotated[Settings, Depends(get_settings)]
 ) -> dict:
     """Return real retrieved evidence with exact applicability filters and PDF pages."""
-    if not body.query.strip():
-        raise HTTPException(422, "Query must contain non-whitespace text")
-    try:
-        settings.require_ready()
-        inventory = await sources(settings)
-        if not any(
-            item["model"] == body.model
-            and item["language"] == body.language
-            and item["document_version"] == body.document_version
-            and item["status"] == "indexed"
-            for item in inventory
-        ):
-            raise HTTPException(
-                409, "This model's manual is not indexed or needs reindexing"
-            )
-        hits = await retrieve(
-            body.query,
-            body.model,
-            body.top_k,
-            body.language,
-            body.document_version,
-            body.strategy,
-            settings,
-        )
-    except ValueError as exc:
-        raise HTTPException(
-            409,
-            "Embedding configuration/index mismatch; check configuration or reindex",
-        ) from exc
-    except (httpx.HTTPError, OSError, asyncpg.PostgresError) as exc:
-        raise HTTPException(503, "SoundGuide retrieval service is unavailable") from exc
+    hits = await retrieve(
+        body.query,
+        body.model,
+        body.top_k,
+        body.language,
+        body.document_version,
+        body.strategy,
+        settings,
+    )
     return {
         "query": body.query,
         "model": body.model,
@@ -176,23 +158,16 @@ async def answer(
             "model_called": False,
             "retrieval": {"strategy": "none", "evidence_count": 0},
         }
-    retrieval = await search(
-        SearchRequest(
-            query=body.question, model=body.model, top_k=8, strategy=body.strategy
-        ),
-        settings,
+    hits = await retrieve(
+        body.question, body.model, 8, "zh-CN", "v1", body.strategy, settings
     )
     try:
-        response = await generate(
-            body.question, body.model, retrieval["results"], settings
-        )
+        response = await generate(body.question, body.model, hits, settings)
     except InvalidAnswerError as exc:
         raise HTTPException(
             502,
             "Model output failed citation or completeness validation; no answer was published",
         ) from exc
-    except ValueError as exc:
-        raise HTTPException(503, "Generation model API is not configured") from exc
     except (GenerationUnavailableError, httpx.HTTPError, OSError) as exc:
         raise HTTPException(503, "Generation model API is unavailable") from exc
     return {
@@ -202,6 +177,6 @@ async def answer(
         "retrieval": {
             "strategy": body.strategy,
             "embedding_profile": settings.profile,
-            "evidence_count": len(retrieval["results"]),
+            "evidence_count": len(hits),
         },
     }

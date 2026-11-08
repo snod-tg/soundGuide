@@ -9,6 +9,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 from soundguide import PIPELINE_VERSION
+from soundguide.errors import ConfigurationError
 
 DIMENSIONS = 512
 MIN_GENERATION_TOKENS = 128
@@ -39,11 +40,13 @@ class Settings:
             or not self.embedding_key
             or not self.embedding_revision
         ):
-            raise ValueError(
+            raise ConfigurationError(
                 "Configure SoundGuide database and embedding credentials/revision first"
             )
         if self.dimensions != DIMENSIONS:
-            raise ValueError("Initial schema requires 512-dimensional embeddings")
+            raise ConfigurationError(
+                "Initial schema requires 512-dimensional embeddings"
+            )
 
     def require_generation(self):
         """Require explicit generation API settings without coupling model lifecycles."""
@@ -52,13 +55,15 @@ class Settings:
             or not self.generation_model
             or not self.generation_key
         ):
-            raise ValueError("Configure the generation model API first")
+            raise ConfigurationError("Configure the generation model API first")
         if (
             not MIN_GENERATION_TOKENS
             <= self.generation_max_tokens
             <= MAX_GENERATION_TOKENS
         ):
-            raise ValueError("Generation token limit must be between 128 and 4096")
+            raise ConfigurationError(
+                "Generation token limit must be between 128 and 4096"
+            )
 
     @property
     def profile(self) -> str:
@@ -78,6 +83,11 @@ class Settings:
 def get_settings() -> Settings:
     """Load local configuration without exposing credentials in API responses."""
     load_dotenv(ROOT / ".env", override=False)
+    try:
+        dimensions = int(os.getenv("SG_EMBEDDING_DIMENSIONS", "512"))
+        max_tokens = int(os.getenv("SG_GENERATION_MAX_TOKENS", "1536"))
+    except ValueError as exc:
+        raise ConfigurationError("Invalid numeric SoundGuide configuration") from exc
     return Settings(
         database_url=os.getenv("SG_DATABASE_URL", ""),
         embedding_url=os.getenv("SG_EMBEDDING_BASE_URL", "http://127.0.0.1:8091/v1"),
@@ -87,6 +97,6 @@ def get_settings() -> Settings:
         generation_url=os.getenv("SG_GENERATION_BASE_URL", ""),
         generation_model=os.getenv("SG_GENERATION_MODEL", ""),
         generation_key=os.getenv("SG_GENERATION_API_KEY", ""),
-        generation_max_tokens=int(os.getenv("SG_GENERATION_MAX_TOKENS", "1536")),
-        dimensions=int(os.getenv("SG_EMBEDDING_DIMENSIONS", "512")),
+        generation_max_tokens=max_tokens,
+        dimensions=dimensions,
     )

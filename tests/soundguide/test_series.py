@@ -174,23 +174,20 @@ async def test_unindexed_catalogued_model_is_rejected_before_embedding(
     monkeypatch, tmp_path
 ):
     """Catalog membership alone does not authorize answering from a missing index."""
-    from soundguide import server
+    from soundguide import retrieval
 
-    async def inventory(*args: object) -> list[dict]:
-        return [
-            {
-                "model": "WF-1000XM6",
-                "language": "zh-CN",
-                "document_version": "v1",
-                "status": "candidate",
-            }
-        ]
+    async def missing_index(_store, source_id: str) -> list[dict]:
+        assert source_id == html_source_id
+        return []
 
-    async def forbidden(*args: object, **kwargs: object) -> None:
+    def forbidden(_settings) -> None:
         raise AssertionError("Do not call an embedding service for an unindexed model")
 
-    monkeypatch.setattr(server, "sources", inventory)
-    monkeypatch.setattr(server, "retrieve", forbidden)
+    html_source_id = next(
+        source.id for source in load_sources() if source.model == "WF-1000XM6"
+    )
+    monkeypatch.setattr(retrieval.Store, "status", missing_index)
+    monkeypatch.setattr(retrieval, "HttpEmbeddings", forbidden)
     APP.dependency_overrides[get_settings] = lambda: Settings(
         database_url="unused",
         embedding_key="synthetic",

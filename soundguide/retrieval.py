@@ -5,6 +5,8 @@ import re
 from collections import Counter, defaultdict
 
 from soundguide.embeddings import HttpEmbeddings
+from soundguide.errors import InvalidQueryError, RetrievalLimitError
+from soundguide.inventory import require_indexed_source
 from soundguide.settings import Settings
 from soundguide.store import Store
 
@@ -182,21 +184,26 @@ async def retrieve(  # noqa: PLR0913
     settings: Settings,
 ) -> list[dict]:
     """Read one model's candidates and never mix embedding profiles or models."""
+    if not query.strip():
+        raise InvalidQueryError("Query must contain non-whitespace text")
     if strategy not in {"vector", "hybrid"}:
-        raise ValueError("Unknown retrieval strategy")
+        raise InvalidQueryError("Unknown retrieval strategy")
+    store = Store(settings)
+    source = await require_indexed_source(store, model, language, version)
     vector = await HttpEmbeddings(settings).aembed_query(
         expand_query(query) if strategy == "hybrid" else query
     )
-    rows = await Store(settings).search(
+    rows = await store.search(
         vector,
         model,
         top_k if strategy == "vector" else MAX_CORPUS + 1,
         language,
         version,
+        source=source,
     )
     if strategy == "hybrid":
         if len(rows) > MAX_CORPUS:
-            raise ValueError("Corpus exceeds the in-memory BM25 limit")
+            raise RetrievalLimitError("Corpus exceeds the in-memory BM25 limit")
         rows = add_neighbors(fuse(rows, query, top_k), rows, top_k)
     for row in rows:
         metadata = row["metadata"]

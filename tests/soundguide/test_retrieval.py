@@ -118,7 +118,7 @@ async def test_search_requires_model_and_rejects_empty_or_unconfigured_requests(
                 await client.post(
                     "/api/search", json={"query": "测试", "model": "WH-1000XM4"}
                 )
-            ).status_code == 409
+            ).status_code == 503
     finally:
         APP.dependency_overrides.clear()
 
@@ -176,3 +176,36 @@ async def test_tampered_file_is_rejected_before_embedding_or_storage(tmp_path):
     )
     with pytest.raises(ValueError, match="hash mismatch"):
         await ingest_source(source, Settings(data_dir=tmp_path), None, None)
+
+
+@pytest.mark.parametrize(
+    ("failure", "status"),
+    [("index", 409), ("provider", 502), ("capacity", 503)],
+)
+async def test_api_distinguishes_retrieval_failures(monkeypatch, failure, status):
+    """Expose actionable errors without routing through the inventory endpoint."""
+    from soundguide import server
+    from soundguide.errors import (
+        EmbeddingContractError,
+        IndexNotReadyError,
+        RetrievalLimitError,
+    )
+
+    errors = {
+        "index": IndexNotReadyError("reindex required"),
+        "provider": EmbeddingContractError("invalid vector"),
+        "capacity": RetrievalLimitError("corpus exceeds capacity"),
+    }
+
+    async def fail_retrieval(*_args: object) -> None:
+        raise errors[failure]
+
+    monkeypatch.setattr(server, "retrieve", fail_retrieval)
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=server.APP), base_url="http://test"
+    ) as client:
+        response = await client.post(
+            "/api/answer", json={"question": "测试", "model": "WH-1000XM4"}
+        )
+    assert response.status_code == status
+    assert response.json()["detail"] == str(errors[failure])

@@ -5,6 +5,8 @@ from contextlib import asynccontextmanager
 
 import asyncpg
 
+from soundguide.catalog import Source
+from soundguide.errors import IndexNotReadyError
 from soundguide.settings import Settings
 
 SCHEMA = """
@@ -80,32 +82,60 @@ class Store:
                 ],
             )
 
-    async def status(self):
+    async def status(self, source_id: str | None = None) -> list[dict]:
         """Return actual committed counts and embedding profile for each source."""
         async with self.connection() as conn:
             rows = await conn.fetch(
-                "SELECT d.source_id,d.model,d.profile,d.indexed_at,d.provenance->>'sha256' AS content_sha256,count(c.id) AS chunks FROM sg_documents d LEFT JOIN sg_chunks c USING(source_id) GROUP BY d.source_id ORDER BY d.source_id"
+                """
+                SELECT d.source_id, d.model, d.profile, d.indexed_at,
+                       d.provenance->>'sha256' AS content_sha256, count(c.id) AS chunks
+                FROM sg_documents d LEFT JOIN sg_chunks c USING (source_id)
+                WHERE ($1::text IS NULL OR d.source_id = $1)
+                GROUP BY d.source_id
+                ORDER BY d.source_id
+                """,
+                source_id,
             )
             return [dict(row) for row in rows]
 
-    async def search(self, vector, model: str, top_k: int, language: str, version: str):
+    async def search(  # noqa: PLR0913
+        self,
+        vector,
+        model: str,
+        top_k: int,
+        language: str,
+        version: str,
+        *,
+        source: Source | None = None,
+    ):
         """Filter applicability before ranking and reject mismatched embedding profiles."""
         async with self.connection() as conn:
+            source_id = source.id if source else None
+            expected_checksum = source.expected_sha256 if source else None
             mismatch = await conn.fetchval(
-                "SELECT count(*) FROM sg_documents WHERE model=$1 AND language=$2 AND document_version=$3 AND profile<>$4",
+                """
+                SELECT count(*) FROM sg_documents
+                WHERE model = $1 AND language = $2 AND document_version = $3
+                  AND profile <> $4 AND ($5::text IS NULL OR source_id = $5)
+                """,
                 model,
                 language,
                 version,
                 self.settings.profile,
+                source_id,
             )
             if mismatch:
-                raise ValueError(
+                raise IndexNotReadyError(
                     "Indexed embedding profile has changed; reindex this model first"
                 )
             rows = await conn.fetch(
                 """SELECT c.id,c.content,c.metadata,(c.embedding <=> $1::text::vector) AS distance
               FROM sg_chunks c JOIN sg_documents d USING(source_id)
               WHERE d.model=$2 AND d.language=$3 AND d.document_version=$4 AND d.profile=$5
+                AND ($7::text IS NULL OR (
+                    d.source_id = $7
+                    AND d.provenance->>'sha256' IS NOT DISTINCT FROM $8::text
+                ))
               ORDER BY c.embedding <=> $1::text::vector, c.id LIMIT $6""",
                 json.dumps(vector),
                 model,
@@ -113,6 +143,8 @@ class Store:
                 version,
                 self.settings.profile,
                 top_k,
+                source_id,
+                expected_checksum,
             )
             return [
                 {
