@@ -11,8 +11,8 @@ import httpx
 from bs4 import BeautifulSoup
 
 from soundguide.catalog import load_sources
+from soundguide.settings import get_settings
 
-DATA = Path(__file__).resolve().parents[1] / ".data"
 MAX_PDF_BYTES = 20 * 1024 * 1024
 MAX_HTML_BYTES = 1024 * 1024
 MAX_CHAPTERS = 200
@@ -101,8 +101,10 @@ async def html_snapshot(source, client):
     return payload, response, len(pages)
 
 
-async def download_source(source, directory: Path = DATA):
+async def download_source(source, directory: Path | None = None):
     """Publish a complete verified PDF or chapter archive, preserving previous snapshots."""
+    if directory is None:
+        directory = get_settings().data_dir
     url = str(source.download_url or source.url)
     async with httpx.AsyncClient(timeout=60, trust_env=False) as client:
         if source.format == "html_manual":
@@ -148,13 +150,14 @@ async def download_source(source, directory: Path = DATA):
 
 async def main():
     """Download all manuals; reuse only matching, verified local snapshots."""
+    directory = get_settings().data_dir
     for source in load_sources():
-        manifest = DATA / "raw" / source.id / "download.json"
+        manifest = directory / "raw" / source.id / "download.json"
         if manifest.exists():
             record = json.loads(manifest.read_text())
             cached = Path(record["path"]).resolve()
             if (
-                cached.is_relative_to((DATA / "raw").resolve())
+                cached.is_relative_to((directory / "raw").resolve())
                 and cached.is_file()
                 and record["source_id"] == source.id
                 and record["model"] == source.model
@@ -165,7 +168,7 @@ async def main():
             ):
                 print(f"{source.model}: verified cached snapshot", flush=True)
                 continue
-        record = await download_source(source)
+        record = await download_source(source, directory)
         print(
             f"{source.model}: downloaded {record['bytes']} bytes; sha256={record['sha256']}",
             flush=True,

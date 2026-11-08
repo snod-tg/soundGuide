@@ -30,6 +30,15 @@ class ChunkMetadata(TypedDict):
     section_title: str | None
 
 
+class PreparedChunk(TypedDict):
+    """A chunk before vectorization and insertion into PostgreSQL."""
+
+    id: str
+    content: str
+    embedding_text: str
+    metadata: ChunkMetadata
+
+
 class IndexedSourceState(TypedDict):
     """Committed index metadata returned by PostgreSQL."""
 

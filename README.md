@@ -92,7 +92,7 @@ uv run python -m soundguide.download
 uv run python -m soundguide.ingest
 ```
 
-下载器只接受允许的官方 HTTPS 来源，并校验目录中固定的文件指纹。官网资料发生变化时会拒绝静默替换，应先审核新文档并更新来源目录。原文件、下载记录和预处理切片保存在被忽略的 `.data/` 中。
+下载器只接受允许的官方 HTTPS 来源，并校验目录中固定的文件指纹。官网资料发生变化时会拒绝静默替换，应先审核新文档并更新来源目录。原文件、下载记录和预处理切片默认保存在被忽略的 `.data/` 中；下载、入库和查询共享 `SG_DATA_DIR`。
 
 ### 4. 启动网页与 API
 
@@ -105,7 +105,7 @@ uv run uvicorn soundguide.server:APP --host 127.0.0.1 --port 8001
 - 存活检查：`GET /health`，只表示应用进程正常
 - 来源与实际索引状态：`GET /api/sources`
 
-服务启动后可运行 `uv run python scripts/doctor.py` 检查依赖连接与索引状态；该脚本只检查，不启动外部服务。
+服务启动后可运行 `uv run python scripts/doctor.py` 检查依赖连接与索引状态；该脚本只检查，不启动外部服务。应用使用其他端口时，传入 `--base-url`。
 
 ## API 示例
 

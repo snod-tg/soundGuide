@@ -21,6 +21,7 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 
 from soundguide import PIPELINE_VERSION
 from soundguide.catalog import Source, load_sources
+from soundguide.evidence import ChunkMetadata, PreparedChunk
 
 MAX_BYTES = 20 * 1024 * 1024
 CONTENT_TYPES = ("text/html", "text/plain", "application/pdf", "application/json")
@@ -165,34 +166,7 @@ def prepare_document(source: Source, payload: bytes, content_type: str) -> dict:
     if not documents:
         raise ValueError("No text could be extracted from the document")
     chunks = [
-        {
-            "id": hashlib.sha256(f"{document_id}:{index}".encode()).hexdigest(),
-            "content": doc.page_content,
-            "embedding_text": (
-                doc.metadata.get("section_title", "") + "\n" + doc.page_content
-            ).strip(),
-            "metadata": {
-                "source_id": source.id,
-                "document_id": document_id,
-                "content_sha256": content_hash,
-                "model": source.model,
-                "manufacturer": source.manufacturer,
-                "language": source.language,
-                "region": source.region,
-                "format": source.format,
-                "machine_translated": source.machine_translated,
-                "document_version": source.document_version,
-                "firmware_version": source.firmware_version,
-                "source_url": doc.metadata.get("source_url")
-                or str(source.download_url or source.url),
-                "page": doc.metadata.get("page", -1) + 1
-                if "page" in doc.metadata
-                else None,
-                "pipeline_version": PIPELINE_VERSION,
-                "chunk_index": index,
-                "section_title": doc.metadata.get("section_title"),
-            },
-        }
+        build_chunk(source, doc, document_id, content_hash, index)
         for index, doc in enumerate(documents)
     ]
     return {
@@ -204,6 +178,41 @@ def prepare_document(source: Source, payload: bytes, content_type: str) -> dict:
         "document_id": document_id,
         "chunks": chunks,
     }
+
+
+def build_chunk(
+    source: Source, doc: Document, document_id: str, content_hash: str, index: int
+) -> PreparedChunk:
+    """Normalize parser metadata into the persisted evidence contract."""
+    parser_page = doc.metadata.get("page")
+    title = doc.metadata.get("section_title")
+    source_url = doc.metadata.get("source_url") or str(
+        source.download_url or source.url
+    )
+    metadata = ChunkMetadata(
+        source_id=source.id,
+        document_id=document_id,
+        content_sha256=content_hash,
+        model=source.model,
+        manufacturer=source.manufacturer,
+        language=source.language,
+        region=source.region,
+        format=source.format,
+        machine_translated=source.machine_translated,
+        document_version=source.document_version,
+        firmware_version=source.firmware_version,
+        source_url=source_url,
+        page=parser_page + 1 if parser_page is not None else None,
+        pipeline_version=PIPELINE_VERSION,
+        chunk_index=index,
+        section_title=title,
+    )
+    return PreparedChunk(
+        id=hashlib.sha256(f"{document_id}:{index}".encode()).hexdigest(),
+        content=doc.page_content,
+        embedding_text=((title or "") + "\n" + doc.page_content).strip(),
+        metadata=metadata,
+    )
 
 
 def main() -> None:

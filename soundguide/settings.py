@@ -88,6 +88,7 @@ def get_settings() -> Settings:
         max_tokens = int(os.getenv("SG_GENERATION_MAX_TOKENS", "1536"))
     except ValueError as exc:
         raise ConfigurationError("Invalid numeric SoundGuide configuration") from exc
+    data_dir = Path(os.getenv("SG_DATA_DIR") or ".data").expanduser()
     return Settings(
         database_url=os.getenv("SG_DATABASE_URL", ""),
         embedding_url=os.getenv("SG_EMBEDDING_BASE_URL", "http://127.0.0.1:8091/v1"),
@@ -99,4 +100,5 @@ def get_settings() -> Settings:
         generation_key=os.getenv("SG_GENERATION_API_KEY", ""),
         generation_max_tokens=max_tokens,
         dimensions=dimensions,
+        data_dir=ROOT / data_dir,
     )

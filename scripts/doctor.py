@@ -1,5 +1,6 @@
 """Run: uv run python scripts/doctor.py. Read-only diagnosis; never starts model processes."""
 
+import argparse
 import asyncio
 from urllib.parse import urlsplit
 
@@ -9,11 +10,11 @@ import httpx
 from soundguide.settings import get_settings
 
 
-async def main():
+async def check_dependencies(base_url: str) -> None:
     """Check independent dependencies while keeping credentials and provider errors private."""
-    settings = get_settings()
     healthy = True
     try:
+        settings = get_settings()
         settings.require_ready()
         settings.require_generation()
     except ValueError:
@@ -27,7 +28,7 @@ async def main():
                 settings.generation_url + "/models",
                 settings.generation_key,
             ),
-            ("application", "http://127.0.0.1:8001/api/sources", ""),
+            ("application", base_url.rstrip("/") + "/api/sources", ""),
         ):
             try:
                 response = await client.get(
@@ -56,7 +57,7 @@ async def main():
                     print(
                         f"OK {name}: {urlsplit(url).hostname}:{urlsplit(url).port or 443}"
                     )
-            except (httpx.HTTPError, ValueError, KeyError):
+            except (httpx.HTTPError, ValueError, KeyError, TypeError, AttributeError):
                 healthy = False
                 print(
                     f"FAIL {name}: check its service/API connection"
@@ -76,5 +77,13 @@ async def main():
         raise SystemExit(1)
 
 
+def main() -> None:
+    """Parse the application endpoint before running the diagnostic."""
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--base-url", default="http://127.0.0.1:8001")
+    args = parser.parse_args()
+    asyncio.run(check_dependencies(args.base_url))
+
+
 if __name__ == "__main__":
-    asyncio.run(main())
+    main()

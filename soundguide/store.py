@@ -60,7 +60,10 @@ class Store:
             await conn.execute("SELECT pg_advisory_xact_lock(hashtext($1))", source.id)
             await conn.execute("DELETE FROM sg_documents WHERE source_id=$1", source.id)
             await conn.execute(
-                "INSERT INTO sg_documents(source_id,document_id,model,language,document_version,profile,provenance) VALUES($1,$2,$3,$4,$5,$6,$7::jsonb)",
+                """
+                INSERT INTO sg_documents (source_id, document_id, model, language, document_version, profile, provenance)
+                VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb)
+                """,
                 source.id,
                 prepared["document_id"],
                 source.model,
@@ -70,7 +73,10 @@ class Store:
                 json.dumps(prepared["download"]),
             )
             await conn.executemany(
-                "INSERT INTO sg_chunks(id,source_id,content,metadata,embedding) VALUES($1,$2,$3,$4::jsonb,$5::text::vector)",
+                """
+                INSERT INTO sg_chunks (id, source_id, content, metadata, embedding)
+                VALUES ($1, $2, $3, $4::jsonb, $5::text::vector)
+                """,
                 [
                     (
                         chunk["id"],
