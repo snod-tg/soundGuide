@@ -4,6 +4,7 @@ import json
 
 from soundguide.catalog import Source, load_sources
 from soundguide.errors import IndexNotReadyError, ManifestError
+from soundguide.evidence import IndexedSourceState
 from soundguide.settings import Settings
 from soundguide.store import Store
 
@@ -24,7 +25,7 @@ def downloaded_checksum(source: Source, settings: Settings) -> str | None:
 
 
 def index_is_ready(
-    source: Source, state: dict, checksum: str | None, profile: str
+    source: Source, state: IndexedSourceState, checksum: str | None, profile: str
 ) -> bool:
     """Use the same provenance predicate for listing and retrieval."""
     return (

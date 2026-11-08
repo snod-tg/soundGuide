@@ -7,6 +7,7 @@ import asyncpg
 
 from soundguide.catalog import Source
 from soundguide.errors import IndexNotReadyError
+from soundguide.evidence import IndexedSourceState, RankedChunk, parse_chunk_metadata
 from soundguide.settings import Settings
 
 SCHEMA = """
@@ -82,7 +83,7 @@ class Store:
                 ],
             )
 
-    async def status(self, source_id: str | None = None) -> list[dict]:
+    async def status(self, source_id: str | None = None) -> list[IndexedSourceState]:
         """Return actual committed counts and embedding profile for each source."""
         async with self.connection() as conn:
             rows = await conn.fetch(
@@ -96,7 +97,17 @@ class Store:
                 """,
                 source_id,
             )
-            return [dict(row) for row in rows]
+            return [
+                IndexedSourceState(
+                    source_id=row["source_id"],
+                    model=row["model"],
+                    profile=row["profile"],
+                    indexed_at=row["indexed_at"],
+                    content_sha256=row["content_sha256"],
+                    chunks=row["chunks"],
+                )
+                for row in rows
+            ]
 
     async def search(  # noqa: PLR0913
         self,
@@ -107,7 +118,7 @@ class Store:
         version: str,
         *,
         source: Source | None = None,
-    ):
+    ) -> list[RankedChunk]:
         """Filter applicability before ranking and reject mismatched embedding profiles."""
         async with self.connection() as conn:
             source_id = source.id if source else None
@@ -150,7 +161,7 @@ class Store:
                 {
                     "id": row["id"],
                     "content": row["content"],
-                    "metadata": json.loads(row["metadata"]),
+                    "metadata": parse_chunk_metadata(row["metadata"]),
                     "cosine_similarity": 1 - float(row["distance"]),
                 }
                 for row in rows

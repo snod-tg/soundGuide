@@ -6,6 +6,7 @@ from collections import Counter, defaultdict
 
 from soundguide.embeddings import HttpEmbeddings
 from soundguide.errors import InvalidQueryError, RetrievalLimitError
+from soundguide.evidence import EvidenceChunk, RankedChunk
 from soundguide.inventory import require_indexed_source
 from soundguide.settings import Settings
 from soundguide.store import Store
@@ -89,37 +90,41 @@ def bm25_scores(query: str, texts: list[str]) -> list[float]:
     return scores
 
 
-def fuse(candidates: list[dict], query: str, top_k: int) -> list[dict]:
-    """Fuse bounded rank lists, retaining at most two chunks from one PDF page."""
+def fuse(
+    vector_ranked_candidates: list[RankedChunk], query: str, top_k: int
+) -> list[RankedChunk]:
+    """Fuse candidates already ordered by vector distance, then chunk id."""
+    by_id = {row["id"]: row for row in vector_ranked_candidates}
     texts = [
         (row["metadata"].get("section_title") or "") * 3 + " " + row["content"]
-        for row in candidates
+        for row in by_id.values()
     ]
-    lexical = bm25_scores(expand_query(query), texts)
+    lexical = dict(zip(by_id, bm25_scores(expand_query(query), texts), strict=True))
     sparse = sorted(
-        (i for i, score in enumerate(lexical) if score > 0),
-        key=lambda i: (-lexical[i], candidates[i]["id"]),
+        (chunk_id for chunk_id, score in lexical.items() if score > 0),
+        key=lambda chunk_id: (-lexical[chunk_id], chunk_id),
     )[:CANDIDATE_LIMIT]
-    scores = defaultdict(float)
-    ranks = defaultdict(dict)
-    for method, indices in (
-        ("vector", list(range(min(CANDIDATE_LIMIT, len(candidates))))),
+    scores: dict[str, float] = defaultdict(float)
+    ranks: dict[str, dict[str, int]] = defaultdict(dict)
+    for method, ranked_ids in (
+        ("vector", list(by_id)[:CANDIDATE_LIMIT]),
         ("bm25", sparse),
     ):
-        for rank, index in enumerate(indices, 1):
-            scores[index] += 1 / (RRF_K + rank)
-            ranks[index][method] = rank
+        for rank, chunk_id in enumerate(ranked_ids, 1):
+            scores[chunk_id] += 1 / (RRF_K + rank)
+            ranks[chunk_id][method] = rank
     preferred = intent_titles(query)
-    for index in scores:
-        if candidates[index]["metadata"].get("section_title") in preferred:
-            scores[index] += 2 / (RRF_K + 1)
-    pages = Counter()
-    results = []
-    for index in sorted(scores, key=lambda i: (-scores[i], candidates[i]["id"])):
-        row = candidates[index]
+    for chunk_id in scores:
+        if by_id[chunk_id]["metadata"].get("section_title") in preferred:
+            scores[chunk_id] += 2 / (RRF_K + 1)
+    pages: Counter[tuple[str, int | str | None]] = Counter()
+    results: list[RankedChunk] = []
+    for chunk_id in sorted(scores, key=lambda key: (-scores[key], key)):
+        row = by_id[chunk_id]
+        metadata = row["metadata"]
         page = (
-            row["metadata"]["source_id"],
-            row["metadata"].get("page") or row["metadata"].get("source_url"),
+            metadata["source_id"],
+            metadata.get("page") or metadata.get("source_url"),
         )
         if pages[page] >= MAX_PER_PAGE:
             continue
@@ -127,9 +132,9 @@ def fuse(candidates: list[dict], query: str, top_k: int) -> list[dict]:
         results.append(
             {
                 **row,
-                "rrf_score": scores[index],
-                "bm25_score": lexical[index],
-                "ranks": ranks[index],
+                "rrf_score": scores[chunk_id],
+                "bm25_score": lexical[chunk_id],
+                "ranks": ranks[chunk_id],
             }
         )
         if len(results) == top_k:
@@ -137,7 +142,9 @@ def fuse(candidates: list[dict], query: str, top_k: int) -> list[dict]:
     return results
 
 
-def add_neighbors(seeds: list[dict], candidates: list[dict], limit: int) -> list[dict]:
+def add_neighbors(
+    seeds: list[RankedChunk], candidates: list[RankedChunk], limit: int
+) -> list[RankedChunk]:
     """Preserve every ranked seed; neighbors may only fill unused evidence slots."""
     result = seeds[:limit]
     if len(result) >= limit:
@@ -167,10 +174,6 @@ def add_neighbors(seeds: list[dict], candidates: list[dict], limit: int) -> list
                 return result
             result.append({**row, "context_neighbor_of": anchor["id"]})
             seen.add(row["id"])
-    for row in seeds:
-        if row["id"] not in seen and len(result) < limit:
-            result.append(row)
-            seen.add(row["id"])
     return result
 
 
@@ -182,7 +185,7 @@ async def retrieve(  # noqa: PLR0913
     version: str,
     strategy: str,
     settings: Settings,
-) -> list[dict]:
+) -> list[EvidenceChunk]:
     """Read one model's candidates and never mix embedding profiles or models."""
     if not query.strip():
         raise InvalidQueryError("Query must contain non-whitespace text")
@@ -205,9 +208,14 @@ async def retrieve(  # noqa: PLR0913
         if len(rows) > MAX_CORPUS:
             raise RetrievalLimitError("Corpus exceeds the in-memory BM25 limit")
         rows = add_neighbors(fuse(rows, query, top_k), rows, top_k)
-    for row in rows:
-        metadata = row["metadata"]
-        row["citation_url"] = metadata["source_url"] + (
-            f"#page={metadata['page']}" if metadata.get("page") else ""
-        )
-    return rows
+    return [with_citation(row) for row in rows]
+
+
+def with_citation(row: RankedChunk) -> EvidenceChunk:
+    """Derive the citation URL once from the validated provenance."""
+    metadata = row["metadata"]
+    page = metadata["page"]
+    return {
+        **row,
+        "citation_url": metadata["source_url"] + (f"#page={page}" if page else ""),
+    }

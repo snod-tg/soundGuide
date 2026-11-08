@@ -8,7 +8,8 @@ from openai import APIConnectionError
 from pydantic import ValidationError
 
 import soundguide.answer as answering
-from soundguide.answer import Draft, InvalidAnswerError, generate, render
+from soundguide.answer import generate
+from soundguide.citations import Draft, InvalidAnswerError, render
 from soundguide.settings import Settings
 
 

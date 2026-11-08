@@ -11,13 +11,9 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, field_validator
 
 from soundguide import __version__
-from soundguide.answer import (
-    GenerationUnavailableError,
-    InvalidAnswerError,
-    clarification_for,
-    generate,
-)
+from soundguide.answer import GenerationUnavailableError, generate
 from soundguide.catalog import load_sources
+from soundguide.citations import InvalidAnswerError
 from soundguide.errors import (
     ConfigurationError,
     EmbeddingContractError,
@@ -28,6 +24,7 @@ from soundguide.errors import (
     SoundGuideError,
 )
 from soundguide.inventory import list_source_statuses
+from soundguide.prompts import clarification_for
 from soundguide.retrieval import expand_query, retrieve
 from soundguide.settings import Settings, get_settings
 
